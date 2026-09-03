@@ -836,12 +836,14 @@ function bindSupaUI(){
 }
 
 /* =====================================================================
-   SUPABASE "REPLACE ALL" PUSH — used by the CSV import tab's
-   "แทนที่ข้อมูลทั้งหมดใน Supabase" button. DELETEs every existing row in
-   income_records + expense_records, then INSERTs the rows parsed from the
-   two CSV files selected in the import tab, in batches.
+   SUPABASE "ลบข้อมูลเดิม" / "นำเข้าข้อมูลใหม่" — two separate, independent
+   actions used by the CSV import tab (split into 2 buttons on purpose, so
+   each step can be reviewed/confirmed and retried on its own):
+     ปุ่ม 1: pushDeleteAllSupabase()   — DELETEs every row in both tables
+     ปุ่ม 2: pushInsertNewToSupabase() — INSERTs the rows parsed from the
+                                         two CSV files picked in the tab
 
-   This requires the anon key to carry INSERT + DELETE rights on both
+   Both require the anon key to carry INSERT + DELETE rights on both
    tables (see section 7 of supabase_setup.sql) — a deliberate, opt-in
    relaxation of the read-only RLS policy from section 3, accepted because
    this HTML file is only shared with the small set of trusted people who
@@ -906,22 +908,31 @@ function supaInsertBatch(table, rows){
   return p;
 }
 
-/* Deletes ALL existing rows in both Supabase tables, then inserts the rows
-   parsed from the two CSV files currently selected in the import tab.
-   Filters out fully-blank key rows (same rule as the SQL sync script) so
-   trailing empty Excel rows don't get pushed in. Resolves to {incomeCount,
-   expenseCount} on success; rejects with an Error on any failure (state at
-   that point may be partially replaced — see the UI copy for what to do). */
-function pushReplaceToSupabase(incomeRecords, expenseRecords){
-  var incomeRows = toSupaRows(incomeRecords, SUPA_INCOME_COLS).filter(function(r){
+function supaFilterIncomeRows(records){
+  return toSupaRows(records, SUPA_INCOME_COLS).filter(function(r){
     return r['งวดที่'] && String(r['งวดที่']).trim() && r['คนกรีด'] && String(r['คนกรีด']).trim();
   });
-  var expenseRows = toSupaRows(expenseRecords, SUPA_EXPENSE_COLS).filter(function(r){
+}
+function supaFilterExpenseRows(records){
+  return toSupaRows(records, SUPA_EXPENSE_COLS).filter(function(r){
     return r['วันที่'] && String(r['วันที่']).trim();
   });
+}
+
+/* ปุ่ม 1 — ลบแถวข้อมูลเดิมทั้งหมดในทั้ง 2 ตารางบน Supabase (ไม่แตะไฟล์ CSV
+   ที่เลือกไว้เลย) ใช้ก่อนกดปุ่ม 2 เมื่อต้องการเริ่มนับหนึ่งใหม่ */
+function pushDeleteAllSupabase(){
   return supaDeleteAll(SUPA_INCOME_TABLE)
-    .then(function(){ return supaDeleteAll(SUPA_EXPENSE_TABLE); })
-    .then(function(){ return supaInsertBatch(SUPA_INCOME_TABLE, incomeRows); })
+    .then(function(){ return supaDeleteAll(SUPA_EXPENSE_TABLE); });
+}
+
+/* ปุ่ม 2 — นำแถวที่ parse ได้จากไฟล์ CSV ที่เลือกไว้ในแท็บนี้ INSERT เข้า
+   Supabase ตรง ๆ (ไม่ลบอะไรก่อน) กรองแถวว่างท้ายไฟล์ออกก่อนเหมือนเดิม.
+   Resolves {incomeCount, expenseCount} เมื่อสำเร็จ. */
+function pushInsertNewToSupabase(incomeRecords, expenseRecords){
+  var incomeRows = supaFilterIncomeRows(incomeRecords);
+  var expenseRows = supaFilterExpenseRows(expenseRecords);
+  return supaInsertBatch(SUPA_INCOME_TABLE, incomeRows)
     .then(function(){ return supaInsertBatch(SUPA_EXPENSE_TABLE, expenseRows); })
     .then(function(){ return {incomeCount:incomeRows.length, expenseCount:expenseRows.length}; });
 }
@@ -2032,7 +2043,8 @@ var importState = {
   incomeFile:null, incomeParsed:null, incomeError:null,
   expenseFile:null, expenseParsed:null, expenseError:null,
   busy:false, resultMsg:null, resultErr:null,
-  supaConfirming:false, supaBusy:false, supaMsg:null, supaErr:null
+  supaDelConfirming:false, supaDelBusy:false, supaDelMsg:null, supaDelErr:null,
+  supaInsBusy:false, supaInsMsg:null, supaInsErr:null
 };
 
 function fileCardHtml(kind, label, hint, state){
@@ -2069,32 +2081,40 @@ function renderImport(){
     resultHtml = '<div class="insight accent"><div class="insight-ico">✅</div><div><b>นำเข้าข้อมูลสำเร็จ</b><p>'+esc(importState.resultMsg)+'</p></div></div>';
   }
 
-  var supaResultHtml = '';
-  if(importState.supaErr){
-    supaResultHtml = '<div class="insight red" style="margin-top:12px;"><div class="insight-ico">⚠️</div><div><b>แทนที่ข้อมูลใน Supabase ไม่สำเร็จ</b><p>'+esc(importState.supaErr)+'</p><p style="margin-top:4px;">ข้อมูลใน Supabase อาจอยู่ระหว่างกลาง (ลบไปแล้วบางส่วน/นำเข้าไม่ครบ) — กดปุ่มนี้ซ้ำอีกครั้งได้เลย ปุ่มนี้ลบทั้งหมดแล้วนำเข้าใหม่ทั้งชุดทุกครั้งอยู่แล้ว</p></div></div>';
-  } else if(importState.supaMsg){
-    supaResultHtml = '<div class="insight accent" style="margin-top:12px;"><div class="insight-ico">✅</div><div><b>แทนที่ข้อมูลใน Supabase สำเร็จ</b><p>'+esc(importState.supaMsg)+'</p></div></div>';
-  }
-
-  var supaCanPush = canImport && !importState.supaBusy;
   var supaCountsLine = 'ข้อมูลปัจจุบันใน Supabase: '+(supaState.incomeCount? fmtNum(supaState.incomeCount,0):'-')+' แถวรายได้ • '+(supaState.expenseCount? fmtNum(supaState.expenseCount,0):'-')+' แถวค่าใช้จ่าย';
 
-  var supaConfirmBox = '';
-  if(importState.supaConfirming){
-    var newIncomeN = importState.incomeParsed ? toSupaRows(importState.incomeParsed.records, SUPA_INCOME_COLS).filter(function(r){ return r['งวดที่'] && r['คนกรีด']; }).length : 0;
-    var newExpenseN = importState.expenseParsed ? toSupaRows(importState.expenseParsed.records, SUPA_EXPENSE_COLS).filter(function(r){ return r['วันที่']; }).length : 0;
-    supaConfirmBox = '<div class="insight red" style="margin-top:12px;">'+
+  /* ---- ปุ่ม 1: ลบข้อมูลเดิมใน Supabase ---- */
+  var supaDelResultHtml = '';
+  if(importState.supaDelErr){
+    supaDelResultHtml = '<div class="insight red" style="margin-top:12px;"><div class="insight-ico">⚠️</div><div><b>ลบข้อมูลเดิมไม่สำเร็จ</b><p>'+esc(importState.supaDelErr)+'</p><p style="margin-top:4px;">อาจลบไปแล้วบางส่วน (เช่น รายได้ลบแล้วแต่ค่าใช้จ่ายยังไม่ได้ลบ) — กดปุ่มนี้ซ้ำได้เลย ปุ่มนี้ลบทั้งหมดทุกครั้งอยู่แล้ว</p></div></div>';
+  } else if(importState.supaDelMsg){
+    supaDelResultHtml = '<div class="insight accent" style="margin-top:12px;"><div class="insight-ico">✅</div><div><b>ลบข้อมูลเดิมสำเร็จ</b><p>'+esc(importState.supaDelMsg)+'</p></div></div>';
+  }
+  var supaDelConfirmBox = '';
+  if(importState.supaDelConfirming){
+    supaDelConfirmBox = '<div class="insight red" style="margin-top:12px;">'+
       '<div class="insight-ico">⚠️</div>'+
       '<div>'+
-        '<b>ยืนยันการลบและแทนที่ข้อมูลทั้งหมดใน Supabase?</b>'+
-        '<p>จะลบแถวข้อมูลเดิมทั้งหมดใน Supabase ('+supaCountsLine.replace('ข้อมูลปัจจุบันใน Supabase: ','')+') ทิ้งทันที แล้วนำเข้าแทนด้วย '+fmtNum(newIncomeN,0)+' แถวรายได้ + '+fmtNum(newExpenseN,0)+' แถวค่าใช้จ่าย จากไฟล์ที่เลือกไว้ด้านบน — <b>การกระทำนี้ย้อนกลับไม่ได้</b> และคนอื่นที่เปิดแดชบอร์ดนี้อยู่จะเห็นข้อมูลเปลี่ยนทันทีที่ซิงค์ครั้งถัดไป</p>'+
+        '<b>ยืนยันการลบข้อมูลเดิมทั้งหมดใน Supabase?</b>'+
+        '<p>จะลบแถวข้อมูลทั้งหมดใน Supabase ('+supaCountsLine.replace('ข้อมูลปัจจุบันใน Supabase: ','')+') ทิ้งทันที — <b>การกระทำนี้ย้อนกลับไม่ได้</b> หลังลบแล้วตารางจะว่างเปล่าจนกว่าจะกดปุ่ม 2 เพื่อนำเข้าข้อมูลใหม่ คนอื่นที่เปิดแดชบอร์ดอยู่จะเห็นข้อมูลว่างชั่วคราวจนกว่าจะนำเข้าเสร็จ</p>'+
         '<div style="display:flex;gap:8px;margin-top:10px;">'+
-          '<button class="btn danger" id="supaPushConfirmBtn">🗑️ ยืนยัน ลบและแทนที่ทั้งหมด</button>'+
-          '<button class="btn ghost" id="supaPushCancelBtn">ยกเลิก</button>'+
+          '<button class="btn danger" id="supaDelConfirmBtn">🗑️ ยืนยัน ลบข้อมูลเดิมทั้งหมด</button>'+
+          '<button class="btn ghost" id="supaDelCancelBtn">ยกเลิก</button>'+
         '</div>'+
       '</div>'+
     '</div>';
   }
+  var supaDelBtnDisabled = importState.supaDelBusy;
+
+  /* ---- ปุ่ม 2: นำเข้าข้อมูลที่อัปโหลดเข้า Supabase ---- */
+  var supaInsResultHtml = '';
+  if(importState.supaInsErr){
+    supaInsResultHtml = '<div class="insight red" style="margin-top:12px;"><div class="insight-ico">⚠️</div><div><b>นำเข้าข้อมูลใหม่ไม่สำเร็จ</b><p>'+esc(importState.supaInsErr)+'</p><p style="margin-top:4px;">อาจนำเข้าไปแล้วบางส่วน — ถ้าไม่แน่ใจว่าซ้ำหรือไม่ ให้กดปุ่ม 1 ลบทิ้งก่อนแล้วค่อยกดปุ่ม 2 ใหม่</p></div></div>';
+  } else if(importState.supaInsMsg){
+    supaInsResultHtml = '<div class="insight accent" style="margin-top:12px;"><div class="insight-ico">✅</div><div><b>นำเข้าข้อมูลใหม่สำเร็จ</b><p>'+esc(importState.supaInsMsg)+'</p></div></div>';
+  }
+  var supaInsCanPush = canImport && !importState.supaInsBusy;
+  var supaHasExisting = (supaState.incomeCount>0 || supaState.expenseCount>0);
 
   return ''+
   '<div class="row-head"><div><h2>📥 นำเข้าข้อมูล CSV</h2><p class="subtext">อัปโหลดไฟล์ รายได้.csv และ ค่าใช้จ่าย.csv ของคุณเอง — แดชบอร์ดจะคำนวณ pivot ทุกแท็บใหม่จากไฟล์ที่อัปโหลดทันที และจดจำไว้ในเบราว์เซอร์นี้สำหรับครั้งถัดไป</p></div>'+srcBadge+'</div>'+
@@ -2108,12 +2128,24 @@ function renderImport(){
   '</div>'+
   (resultHtml? '<div>'+resultHtml+'</div>' : '')+
   '<div class="card" style="border-color:var(--red-soft-border);">'+
-    '<h3 style="margin-bottom:6px;">🗑️ แทนที่ข้อมูลทั้งหมดใน Supabase</h3>'+
-    '<p class="hint">ใช้ตอนข้อมูลใน Supabase มีปัญหา แล้วต้องการเริ่มใหม่ทั้งชุดจากไฟล์นี้ — ปุ่มนี้จะ <b>ลบแถวเดิมทั้งหมด</b> ใน income_records และ expense_records บน Supabase ก่อน แล้วค่อยนำเข้าไฟล์ที่เลือกไว้ด้านบนแทนทั้งหมด (ไม่ใช่แค่บันทึกในเบราว์เซอร์นี้เหมือนปุ่มด้านบน — คนอื่นที่เชื่อมต่อ Supabase อยู่จะเห็นข้อมูลใหม่ด้วย) ใช้ได้เฉพาะตอนเปิดไฟล์นี้แบบดาวน์โหลดมาเปิดเอง (ไม่ใช่ลิงก์ Artifact preview) เพราะต้องต่อออกอินเทอร์เน็ตไปหา Supabase จริง</p>'+
-    '<div class="hint" style="margin:0 0 10px;color:var(--ink-soft);font-weight:600;">'+supaCountsLine+'</div>'+
-    '<button class="btn danger" id="supaPushBtn" '+(supaCanPush?'':'disabled')+'>'+(importState.supaBusy?'⏳ กำลังลบและแทนที่...':'🗑️ แทนที่ข้อมูลทั้งหมดใน Supabase')+'</button>'+
-    (canImport? '' : '<div class="hint" style="margin-top:8px;">ต้องเลือกไฟล์ให้ครบทั้งสองไฟล์ด้านบนก่อนจึงจะใช้ปุ่มนี้ได้</div>')+
-    supaConfirmBox+supaResultHtml+
+    '<h3 style="margin-bottom:6px;">🗑️📤 จัดการข้อมูลใน Supabase (2 ขั้นตอนแยกกัน)</h3>'+
+    '<p class="hint">ใช้ตอนข้อมูลใน Supabase มีปัญหา แล้วต้องการเริ่มใหม่ทั้งชุดจากไฟล์นี้ — ทำทีละขั้นตอน กดปุ่ม 1 ก่อนเพื่อลบของเดิมออกให้หมด แล้วค่อยกดปุ่ม 2 เพื่อนำไฟล์ที่เลือกไว้ด้านบนเข้าไปแทน (จะข้ามปุ่ม 1 แล้วกดปุ่ม 2 อย่างเดียวก็ได้ ถ้าแค่ต้องการเพิ่มแถวใหม่ต่อจากของเดิม แต่ระวังข้อมูลซ้ำ) การเชื่อมต่อ Supabase ทำงานเฉพาะตอนเปิดไฟล์นี้แบบดาวน์โหลดมาเปิดเอง (ไม่ใช่ลิงก์ Artifact preview) เพราะต้องต่อออกอินเทอร์เน็ตไปหา Supabase จริง</p>'+
+    '<div class="hint" style="margin:0 0 14px;color:var(--ink-soft);font-weight:600;">'+supaCountsLine+'</div>'+
+    '<div class="grid grid-2" style="gap:14px;">'+
+      '<div>'+
+        '<div style="font-size:12px;font-weight:700;margin-bottom:6px;">ขั้นที่ 1 — ลบข้อมูลเดิม</div>'+
+        '<p class="hint" style="margin-bottom:8px;">ลบทุกแถวใน income_records และ expense_records บน Supabase ทิ้งทั้งหมด ไม่แตะไฟล์ที่เลือกไว้ด้านบน</p>'+
+        '<button class="btn danger" id="supaDelBtn" '+(supaDelBtnDisabled?'disabled':'')+'>'+(importState.supaDelBusy?'⏳ กำลังลบ...':'🗑️ ลบข้อมูลเดิมใน Supabase')+'</button>'+
+        supaDelConfirmBox+supaDelResultHtml+
+      '</div>'+
+      '<div>'+
+        '<div style="font-size:12px;font-weight:700;margin-bottom:6px;">ขั้นที่ 2 — นำเข้าข้อมูลที่อัปโหลด</div>'+
+        '<p class="hint" style="margin-bottom:8px;">นำแถวจากไฟล์ที่เลือกไว้ด้านบนของหน้านี้ INSERT เข้า Supabase'+(supaHasExisting?' — Supabase ยังมีข้อมูลเดิมอยู่ ('+supaCountsLine.replace('ข้อมูลปัจจุบันใน Supabase: ','')+') ถ้าไม่ได้กดขั้นที่ 1 ก่อน แถวใหม่จะถูกเพิ่มต่อจากของเดิม อาจซ้ำกันได้':'')+'</p>'+
+        '<button class="btn on" id="supaInsBtn" '+(supaInsCanPush?'':'disabled')+'>'+(importState.supaInsBusy?'⏳ กำลังนำเข้า...':'📤 นำเข้าข้อมูลที่อัปโหลดเข้า Supabase')+'</button>'+
+        (canImport? '' : '<div class="hint" style="margin-top:8px;">ต้องเลือกไฟล์ให้ครบทั้งสองไฟล์ด้านบนก่อนจึงจะใช้ปุ่มนี้ได้</div>')+
+        supaInsResultHtml+
+      '</div>'+
+    '</div>'+
   '</div>'+
   '<div class="card" style="background:var(--bg-sunken);border-style:dashed;">'+
     '<h3 style="margin-bottom:6px;">ข้อมูลปัจจุบันในแดชบอร์ด</h3>'+
@@ -2174,40 +2206,60 @@ function bindImportEvents(){
   var resetBtn = document.getElementById('importResetBtn');
   if(resetBtn) resetBtn.addEventListener('click', function(){
     clearImported();
-    importState = {incomeFile:null, incomeParsed:null, incomeError:null, expenseFile:null, expenseParsed:null, expenseError:null, busy:false, resultMsg:null, resultErr:null, supaConfirming:false, supaBusy:false, supaMsg:null, supaErr:null};
+    importState = {incomeFile:null, incomeParsed:null, incomeError:null, expenseFile:null, expenseParsed:null, expenseError:null, busy:false, resultMsg:null, resultErr:null, supaDelConfirming:false, supaDelBusy:false, supaDelMsg:null, supaDelErr:null, supaInsBusy:false, supaInsMsg:null, supaInsErr:null};
     loadData(SAMPLE_DATA, {type:'sample', importedAt:null});
     render();
   });
 
-  var supaPushBtn = document.getElementById('supaPushBtn');
-  if(supaPushBtn) supaPushBtn.addEventListener('click', function(){
-    if(!importState.incomeParsed || !importState.expenseParsed || importState.supaBusy) return;
-    importState.supaConfirming = true; importState.supaMsg=null; importState.supaErr=null;
+  /* ---- ปุ่ม 1: ลบข้อมูลเดิมใน Supabase ---- */
+  var supaDelBtn = document.getElementById('supaDelBtn');
+  if(supaDelBtn) supaDelBtn.addEventListener('click', function(){
+    if(importState.supaDelBusy) return;
+    importState.supaDelConfirming = true; importState.supaDelMsg=null; importState.supaDelErr=null;
     render();
   });
 
-  var supaCancelBtn = document.getElementById('supaPushCancelBtn');
-  if(supaCancelBtn) supaCancelBtn.addEventListener('click', function(){
-    importState.supaConfirming = false;
+  var supaDelCancelBtn = document.getElementById('supaDelCancelBtn');
+  if(supaDelCancelBtn) supaDelCancelBtn.addEventListener('click', function(){
+    importState.supaDelConfirming = false;
     render();
   });
 
-  var supaConfirmBtn = document.getElementById('supaPushConfirmBtn');
-  if(supaConfirmBtn) supaConfirmBtn.addEventListener('click', function(){
-    if(!importState.incomeParsed || !importState.expenseParsed) return;
-    importState.supaConfirming = false; importState.supaBusy = true; importState.supaMsg=null; importState.supaErr=null;
+  var supaDelConfirmBtn = document.getElementById('supaDelConfirmBtn');
+  if(supaDelConfirmBtn) supaDelConfirmBtn.addEventListener('click', function(){
+    importState.supaDelConfirming = false; importState.supaDelBusy = true; importState.supaDelMsg=null; importState.supaDelErr=null;
     render();
-    pushReplaceToSupabase(importState.incomeParsed.records, importState.expenseParsed.records)
+    pushDeleteAllSupabase()
+      .then(function(){
+        importState.supaDelBusy = false;
+        importState.supaDelMsg = 'ลบข้อมูลเดิมทั้งหมดใน Supabase แล้ว — กดขั้นที่ 2 เพื่อนำเข้าข้อมูลใหม่ต่อได้เลย';
+        supaState.incomeCount = 0; supaState.expenseCount = 0;
+        render();
+      })
+      .catch(function(err){
+        importState.supaDelBusy = false;
+        importState.supaDelErr = (err && err.message) ? err.message : String(err);
+        render();
+      });
+  });
+
+  /* ---- ปุ่ม 2: นำเข้าข้อมูลที่อัปโหลดเข้า Supabase ---- */
+  var supaInsBtn = document.getElementById('supaInsBtn');
+  if(supaInsBtn) supaInsBtn.addEventListener('click', function(){
+    if(!importState.incomeParsed || !importState.expenseParsed || importState.supaInsBusy) return;
+    importState.supaInsBusy = true; importState.supaInsMsg=null; importState.supaInsErr=null;
+    render();
+    pushInsertNewToSupabase(importState.incomeParsed.records, importState.expenseParsed.records)
       .then(function(counts){
-        importState.supaBusy = false;
-        importState.supaMsg = 'ลบข้อมูลเดิมและนำเข้าแทนใน Supabase แล้ว ('+fmtNum(counts.incomeCount,0)+' แถวรายได้ • '+fmtNum(counts.expenseCount,0)+' แถวค่าใช้จ่าย) กำลังซิงค์แดชบอร์ดนี้จากข้อมูลใหม่...';
+        importState.supaInsBusy = false;
+        importState.supaInsMsg = 'นำเข้าข้อมูลใหม่เข้า Supabase แล้ว ('+fmtNum(counts.incomeCount,0)+' แถวรายได้ • '+fmtNum(counts.expenseCount,0)+' แถวค่าใช้จ่าย) กำลังซิงค์แดชบอร์ดนี้จากข้อมูลใหม่...';
         render();
         return connectSupabase();
       })
       .then(function(){ render(); })
       .catch(function(err){
-        importState.supaBusy = false;
-        importState.supaErr = (err && err.message) ? err.message : String(err);
+        importState.supaInsBusy = false;
+        importState.supaInsErr = (err && err.message) ? err.message : String(err);
         render();
       });
   });
