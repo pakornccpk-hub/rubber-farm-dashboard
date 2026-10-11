@@ -441,7 +441,7 @@ footer.credit{padding:20px 32px 40px;color:var(--muted);font-size:10.5px;max-wid
       <div class="gs-panel-row"><span>ชีต expense_records</span><b id="gsPanelExpense">-</b></div>
       <div class="gs-panel-row"><span>ซิงค์ล่าสุด</span><b id="gsPanelSync">-</b></div>
       <div class="gs-panel-err" id="gsPanelErr"></div>
-      <div class="gs-panel-note">หมายเหตุ: ใช้ได้เมื่อเปิดไฟล์นี้โดยตรง (ดาวน์โหลดมาเปิด หรือ host เอง) — การอ่านข้อมูลไม่ต้องใช้รหัส ส่วนการลบ/นำเข้าจะถามรหัสผู้ดูแลครั้งแรกแล้วจำไว้ในเครื่องนี้</div>
+      <div class="gs-panel-note">หมายเหตุ: ใช้ได้เมื่อเปิดไฟล์นี้โดยตรง (ดาวน์โหลดมาเปิด หรือ host เอง)</div>
       <div class="gs-panel-actions">
         <button class="btn on" id="gsRetryBtn" type="button">🔄 ซิงค์ใหม่</button>
         <button class="btn" id="gsForgetKeyBtn" type="button">🔑 ลืมรหัสผู้ดูแล</button>
@@ -731,6 +731,7 @@ var GS_URL = 'https://script.google.com/macros/s/AKfycbwZoZkLcCEa1oMEMdNBX6z3fn1
 var GS_INCOME_TABLE = 'income_records';
 var GS_EXPENSE_TABLE = 'expense_records';
 var GS_KEY_LS = 'rubberDash.gsWriteKey';
+var GS_WRITE_KEY = 'CPK-Rb7x-Kq4m-2026'; // ฝังรหัสไว้ในไฟล์ → ไม่ต้องพิมพ์รหัสตอนลบ/นำเข้า (ใครมีไฟล์นี้ก็แก้ข้อมูลได้)
 
 var gsState = {status:'idle', error:null, lastSync:null, incomeCount:0, expenseCount:0};
 
@@ -761,6 +762,7 @@ function gsCall(payload, isWrite){
 }
 
 function gsGetKey(){
+  if(GS_WRITE_KEY) return GS_WRITE_KEY;
   var ls=safeLS(), k=null;
   if(ls){ try{ k = ls.getItem(GS_KEY_LS); }catch(e){} }
   if(!k){
@@ -777,7 +779,7 @@ function gsWrite(payload){
   if(!key) return Promise.reject(new Error('ยกเลิก — ต้องใส่รหัสผู้ดูแลก่อนจึงจะแก้ไขข้อมูลใน Google Sheet ได้'));
   payload.key = key;
   return gsCall(payload, true).catch(function(err){
-    if(err.code==='UNAUTHORIZED'){ gsClearKey(); err.message = 'รหัสผู้ดูแลไม่ถูกต้อง — กดใหม่อีกครั้งแล้วใส่รหัสที่ถูกต้อง'; }
+    if(err.code==='UNAUTHORIZED'){ gsClearKey(); err.message = GS_WRITE_KEY ? 'รหัส GS_WRITE_KEY ในไฟล์ไม่ตรงกับ WRITE_KEY ใน Apps Script — แก้ให้ตรงกัน หรือ Run setup() ใหม่' : 'รหัสผู้ดูแลไม่ถูกต้อง — กดใหม่อีกครั้งแล้วใส่รหัสที่ถูกต้อง'; }
     throw err;
   });
 }
@@ -2095,7 +2097,7 @@ function renderImport(){
   (resultHtml? '<div>'+resultHtml+'</div>' : '')+
   '<div class="card" style="border-color:var(--red-soft-border);">'+
     '<h3 style="margin-bottom:6px;">🗑️📤 จัดการข้อมูลใน Google Sheet (2 ขั้นตอนแยกกัน)</h3>'+
-    '<p class="hint">ใช้ตอนข้อมูลใน Google Sheet มีปัญหา แล้วต้องการเริ่มใหม่ทั้งชุดจากไฟล์นี้ — ทำทีละขั้นตอน กดปุ่ม 1 ก่อนเพื่อลบของเดิมออกให้หมด แล้วค่อยกดปุ่ม 2 เพื่อนำไฟล์ที่เลือกไว้ด้านบนเข้าไปแทน (จะข้ามปุ่ม 1 แล้วกดปุ่ม 2 อย่างเดียวก็ได้ ถ้าแค่ต้องการเพิ่มแถวใหม่ต่อจากของเดิม แต่ระวังข้อมูลซ้ำ) การลบและนำเข้าต้องใช้รหัสผู้ดูแล (ระบบจะถามเมื่อกดปุ่มครั้งแรก)</p>'+
+    '<p class="hint">ใช้ตอนข้อมูลใน Google Sheet มีปัญหา แล้วต้องการเริ่มใหม่ทั้งชุดจากไฟล์นี้ — ทำทีละขั้นตอน กดปุ่ม 1 ก่อนเพื่อลบของเดิมออกให้หมด แล้วค่อยกดปุ่ม 2 เพื่อนำไฟล์ที่เลือกไว้ด้านบนเข้าไปแทน (จะข้ามปุ่ม 1 แล้วกดปุ่ม 2 อย่างเดียวก็ได้ ถ้าแค่ต้องการเพิ่มแถวใหม่ต่อจากของเดิม แต่ระวังข้อมูลซ้ำ) </p>'+
     '<div class="hint" style="margin:0 0 14px;color:var(--ink-soft);font-weight:600;">'+gsCountsLine+'</div>'+
     '<div class="grid grid-2" style="gap:14px;">'+
       '<div>'+
