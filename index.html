@@ -964,7 +964,7 @@ var GS_EXPENSE_TABLE = 'expense_records';
 var GS_KEY_LS = 'rubberDash.gsWriteKey';
 var GS_WRITE_KEY = 'CPK-Rb7x-Kq4m-2026'; // ฝังรหัสไว้ในไฟล์ → ไม่ต้องพิมพ์รหัสตอนลบ/นำเข้า (ใครมีไฟล์นี้ก็แก้ข้อมูลได้)
 
-var gsState = {status:'idle', error:null, lastSync:null, incomeCount:0, expenseCount:0};
+var gsState = {status:'idle', error:null, lastSync:null, incomeCount:0, expenseCount:0, version:undefined};
 
 function gsConfigured(){ return /^https:\/\/script\.google(usercontent)?\.com\/.+/.test(GS_URL); }
 
@@ -1026,6 +1026,7 @@ function connectSheet(){
   renderGsStatus();
   return gsCall({action:'read'}, false)
     .then(function(j){
+      gsState.version = j.version || '';          // '' = Apps Script เก่า (ไม่ส่งเลขเวอร์ชันมา)
       var incomeRows = j.income||[], expenseRows = j.expense||[];
       gsState.incomeCount=incomeRows.length; gsState.expenseCount=expenseRows.length;
       if(!incomeRows.length || !expenseRows.length){
@@ -2282,12 +2283,33 @@ function renderImport(){
     resultHtml = '<div class="insight accent"><div class="insight-ico">✅</div><div><b>นำเข้าข้อมูลสำเร็จ</b><p>'+esc(importState.resultMsg)+'</p></div></div>';
   }
 
+  var GS_MIN_VER = 9;
+  function gsVerNum(v){ var m = String(v||'').match(/^v(\d+)/); return m ? Number(m[1]) : 0; }
+  var gsDeployHowTo = '<ol style="margin:6px 0 0 18px;padding:0;font-size:11px;line-height:1.7;">'+
+    '<li>วาง Code.gs ล่าสุดทับของเดิม แล้วกดบันทึก</li>'+
+    '<li>กด <b>Deploy (ทำให้ใช้งานได้) → Manage deployments (จัดการการทำให้ใช้งานได้)</b> → ไอคอนดินสอ</li>'+
+    '<li>ช่อง Version เลือก <b>New version (เวอร์ชันใหม่)</b> → กด <b>Deploy</b> (ต้องเป็น deployment ที่ลิงก์ตรงกับ GS_URL ของแดชบอร์ดนี้)</li>'+
+    '<li>กลับมาโหลดหน้านี้ใหม่ (รีเฟรช)</li></ol>';
+  function gsOldScriptHint(msg){
+    if(!/ขาดหัวคอลัมน์|มีคนกำลังแก้ไขข้อมูลอยู่/.test(String(msg||''))) return '';
+    return '<p style="margin-top:8px;"><b>ข้อความนี้มาจาก Apps Script เวอร์ชันเก่า</b> — โค้ดใหม่ไม่มีข้อความนี้แล้ว แปลว่าลิงก์ Google Sheet ยังรันโค้ดเก่าอยู่ (บันทึกโค้ดอย่างเดียวไม่พอ ต้อง Deploy เป็น New version)</p>'+gsDeployHowTo+
+      '<p style="margin-top:8px;font-size:11px;">ทางลัดถ้ายังไม่พร้อม Deploy: ในแท็บ <b>income_records</b> ของ Google Sheet พิมพ์หัวคอลัมน์ 3 ตัวนี้ต่อท้ายแถวที่ 1 ทีละช่องให้ตรงตัวอักษร: <code>ใบมีด [ใบ]</code> · <code>ยากันรา[ถุง]</code> · <code>กรด[แกลลอน]</code> แล้วกดนำเข้าใหม่</p>';
+  }
+  var gsVerHtml = '';
+  if(gsState.version!==undefined){
+    if(gsVerNum(gsState.version) >= GS_MIN_VER){
+      gsVerHtml = '<div class="hint" style="margin:-6px 0 14px;color:var(--accent);">✓ Apps Script เวอร์ชัน '+esc(gsState.version)+'</div>';
+    } else {
+      gsVerHtml = '<div class="insight amber" style="margin:0 0 14px;"><div class="insight-ico">🧩</div><div><b>Apps Script ที่เชื่อมอยู่ยังเป็นเวอร์ชันเก่า'+(gsState.version?' ('+esc(gsState.version)+')':'')+'</b>'+
+        '<p>ปุ่มลบ/นำเข้าอาจขึ้น error เช่น "ขาดหัวคอลัมน์" หรือ "มีคนกำลังแก้ไขข้อมูลอยู่" ให้ Deploy Code.gs เวอร์ชันล่าสุด:</p>'+gsDeployHowTo+'</div></div>';
+    }
+  }
   var gsCountsLine = 'ข้อมูลปัจจุบันใน Google Sheet: '+(gsState.incomeCount? fmtNum(gsState.incomeCount,0):'-')+' แถวรายได้ • '+(gsState.expenseCount? fmtNum(gsState.expenseCount,0):'-')+' แถวค่าใช้จ่าย';
 
   /* ---- ปุ่ม 1: ลบข้อมูลเดิมใน Google Sheet ---- */
   var gsDelResultHtml = '';
   if(importState.gsDelErr){
-    gsDelResultHtml = '<div class="insight red" style="margin-top:12px;"><div class="insight-ico">⚠️</div><div><b>ลบข้อมูลเดิมไม่สำเร็จ</b><p>'+esc(importState.gsDelErr)+'</p><p style="margin-top:4px;">อาจลบไปแล้วบางส่วน (เช่น รายได้ลบแล้วแต่ค่าใช้จ่ายยังไม่ได้ลบ) — กดปุ่มนี้ซ้ำได้เลย ปุ่มนี้ลบทั้งหมดทุกครั้งอยู่แล้ว</p></div></div>';
+    gsDelResultHtml = '<div class="insight red" style="margin-top:12px;"><div class="insight-ico">⚠️</div><div><b>ลบข้อมูลเดิมไม่สำเร็จ</b><p>'+esc(importState.gsDelErr)+'</p>'+gsOldScriptHint(importState.gsDelErr)+'<p style="margin-top:4px;">อาจลบไปแล้วบางส่วน (เช่น รายได้ลบแล้วแต่ค่าใช้จ่ายยังไม่ได้ลบ) — กดปุ่มนี้ซ้ำได้เลย ปุ่มนี้ลบทั้งหมดทุกครั้งอยู่แล้ว</p></div></div>';
   } else if(importState.gsDelMsg){
     gsDelResultHtml = '<div class="insight accent" style="margin-top:12px;"><div class="insight-ico">✅</div><div><b>ลบข้อมูลเดิมสำเร็จ</b><p>'+esc(importState.gsDelMsg)+'</p></div></div>';
   }
@@ -2310,7 +2332,7 @@ function renderImport(){
   /* ---- ปุ่ม 2: นำเข้าข้อมูลที่อัปโหลดเข้า Google Sheet ---- */
   var gsInsResultHtml = '';
   if(importState.gsInsErr){
-    gsInsResultHtml = '<div class="insight red" style="margin-top:12px;"><div class="insight-ico">⚠️</div><div><b>นำเข้าข้อมูลใหม่ไม่สำเร็จ</b><p>'+esc(importState.gsInsErr)+'</p><p style="margin-top:4px;">อาจนำเข้าไปแล้วบางส่วน — ถ้าไม่แน่ใจว่าซ้ำหรือไม่ ให้กดปุ่ม 1 ลบทิ้งก่อนแล้วค่อยกดปุ่ม 2 ใหม่</p></div></div>';
+    gsInsResultHtml = '<div class="insight red" style="margin-top:12px;"><div class="insight-ico">⚠️</div><div><b>นำเข้าข้อมูลใหม่ไม่สำเร็จ</b><p>'+esc(importState.gsInsErr)+'</p>'+gsOldScriptHint(importState.gsInsErr)+'<p style="margin-top:4px;">อาจนำเข้าไปแล้วบางส่วน — ถ้าไม่แน่ใจว่าซ้ำหรือไม่ ให้กดปุ่ม 1 ลบทิ้งก่อนแล้วค่อยกดปุ่ม 2 ใหม่</p></div></div>';
   } else if(importState.gsInsMsg){
     gsInsResultHtml = '<div class="insight accent" style="margin-top:12px;"><div class="insight-ico">✅</div><div><b>นำเข้าข้อมูลใหม่สำเร็จ</b><p>'+esc(importState.gsInsMsg)+'</p></div></div>';
   }
@@ -2331,7 +2353,7 @@ function renderImport(){
   '<div class="card" style="border-color:var(--red-soft-border);">'+
     '<h3 style="margin-bottom:6px;">🗑️📤 จัดการข้อมูลใน Google Sheet (2 ขั้นตอนแยกกัน)</h3>'+
     '<p class="hint">ใช้ตอนข้อมูลใน Google Sheet มีปัญหา แล้วต้องการเริ่มใหม่ทั้งชุดจากไฟล์นี้ — ทำทีละขั้นตอน กดปุ่ม 1 ก่อนเพื่อลบของเดิมออกให้หมด แล้วค่อยกดปุ่ม 2 เพื่อนำไฟล์ที่เลือกไว้ด้านบนเข้าไปแทน (จะข้ามปุ่ม 1 แล้วกดปุ่ม 2 อย่างเดียวก็ได้ ถ้าแค่ต้องการเพิ่มแถวใหม่ต่อจากของเดิม แต่ระวังข้อมูลซ้ำ) </p>'+
-    '<div class="hint" style="margin:0 0 14px;color:var(--ink-soft);font-weight:600;">'+gsCountsLine+'</div>'+
+    '<div class="hint" style="margin:0 0 14px;color:var(--ink-soft);font-weight:600;">'+gsCountsLine+'</div>'+gsVerHtml+
     '<div class="grid grid-2" style="gap:14px;">'+
       '<div>'+
         '<div style="font-size:12px;font-weight:700;margin-bottom:6px;">ขั้นที่ 1 — ลบข้อมูลเดิม</div>'+
