@@ -575,6 +575,31 @@ details.collapse[open]>summary::after{transform:rotate(180deg);}
   .zone-card{padding:12px;}
   .toggle-group button{padding:8px 12px;}
 }
+/* ============ ผลประเมินหน้ากรีด (รายงาน) ============ */
+.pdots{display:inline-flex;gap:3px;vertical-align:middle;}
+.pdots i{display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--border);}
+.pdots i.l3{background:var(--accent);} .pdots i.l2{background:var(--amber);} .pdots i.l1{background:var(--red);}
+.pstack{display:flex;height:9px;border-radius:99px;overflow:hidden;background:var(--bg-sunken);}
+.pstack i{display:block;height:100%;}
+.pmeter{height:6px;border-radius:99px;background:var(--bg-sunken);overflow:hidden;margin-top:8px;}
+.pmeter i{display:block;height:100%;background:var(--accent);border-radius:99px;}
+.kpi.hero .pmeter{background:rgba(255,255,255,.25);} .kpi.hero .pmeter i{background:#fff;}
+.pcrit{display:flex;flex-direction:column;gap:13px;margin-bottom:4px;}
+.pcrit-row .top{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;margin-bottom:5px;}
+.pfollow{display:flex;flex-direction:column;gap:8px;}
+.pfollow .insight{align-items:center;}
+.pfollow .insight > div:last-child{min-width:0;}
+.pscore{display:inline-flex;align-items:center;gap:6px;}
+.pscore .pmeter{width:48px;margin:0 0 0 4px;}
+.pnote{display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;color:var(--ink-soft);}
+.delta{font-weight:600;font-variant-numeric:tabular-nums;}
+.delta.up{color:var(--accent);} .delta.down{color:var(--red);} .delta.flat{color:var(--muted);}
+.pstate{padding:38px 20px;text-align:center;} .pstate .ico{font-size:32px;}
+.pill.gp4{background:var(--accent);border-color:var(--accent);color:#fff;}
+.pill.gp3{background:var(--accent-soft);border-color:var(--accent-soft-border);color:var(--accent-teal);}
+.pill.gp2{background:var(--amber-soft);border-color:var(--amber-soft-border);color:var(--amber);}
+.pill.gp1{background:var(--red-soft);border-color:var(--red-soft-border);color:var(--red);}
+.card-head .select,.row-head .select{max-width:100%;}
 </style>
 <div class="app">
 
@@ -758,7 +783,7 @@ function checkColumns(headers, required){
 function buildIncomeModel(records){
   var workersRaw=[], adminFeeByMonth={}, periodMap={}; // periodMap[period] = {rows:[]}
   records.forEach(function(r){
-    var period = trimVal(r['งวดที่']);
+    var period = trimVal(r['งวดที่']).replace(/,/g,''); // Excel บางไฟล์ใส่คอมมาในเลขงวด (6,906) ให้เป็น 6906
     if(!period) return; // skip blank trailing rows
     var name = trimVal(r['คนกรีด']);
     var type = trimVal(r['ประเภท']);
@@ -954,7 +979,7 @@ function gsCall(payload, isWrite){
   if(!gsConfigured()) return Promise.reject(new Error('ยังไม่ได้ตั้งค่า GS_URL ในไฟล์นี้ — ใส่ URL ของ Apps Script Web App (ลงท้ายด้วย /exec) ก่อน'));
   var req = isWrite
     ? fetch(GS_URL, {method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(payload)})
-    : fetch(GS_URL+'?action='+encodeURIComponent(payload.action)+'&_='+Date.now(), {method:'GET', redirect:'follow'});
+    : fetch(GS_URL+'?'+Object.keys(payload).filter(function(k){ return k!=='key'; }).map(function(k){ return encodeURIComponent(k)+'='+encodeURIComponent(payload[k]); }).join('&')+'&_='+Date.now(), {method:'GET', redirect:'follow'});
   return req.then(function(res){
     return res.text().then(function(t){
       if(!res.ok) throw new Error(gsErrMsg(t, res.status));
@@ -1079,7 +1104,7 @@ function bindGsUI(){
    ===================================================================== */
 var GS_INCOME_COLS = ['งวดที่','จน วัน','วันที่เริ่มกรีด','วันที่ขาย','วันที่ชั่ง','คนกรีด','Zone','ประเภท',
   'จน ต้นกรีด','ต่อต้น [g]','รวม [kg]','นน [kg]','ผลต่างหลังชั่งนน.จริง(g)','ราคาขาย','รวม','คนงาน',
-  'ใบมีด [ใบ]','ยากันรา[ถุง]','กรด[แกลลอน]','พิกัด Google map'];
+  'พิกัด Google map'];
 var GS_EXPENSE_COLS = ['วันที่','บริษัท','หมวดค่าใช้จ่าย','หลักหมวด','รายการ','จน ที่ซื้อ หรือ ส่งมอบ',
   'รายละเอียด','ค่าใช้จ่าย','จ่ายให้','เลขที่ ใบสำคัญจ่าย'];
 
@@ -1094,7 +1119,8 @@ function toSheetRows(records, cols){
   });
 }
 function gsFilterIncomeRows(records){
-  return toSheetRows(records, GS_INCOME_COLS).filter(function(r){ return r['งวดที่'] && r['คนกรีด']; });
+  return toSheetRows(records, GS_INCOME_COLS).map(function(r){ r['งวดที่'] = r['งวดที่'].replace(/,/g,''); return r; })
+    .filter(function(r){ return r['งวดที่'] && r['คนกรีด']; });
 }
 function gsFilterExpenseRows(records){
   return toSheetRows(records, GS_EXPENSE_COLS).filter(function(r){ return r['วันที่']; });
@@ -1216,7 +1242,7 @@ function lineChart(opts){
   var allVals=[];
   cats.forEach(function(c,ci){ series.forEach(function(s){ allVals.push(Number(s.data[ci])||0); }); });
   var minV = Math.min.apply(null,allVals.concat([0]));
-  var maxV = niceMax(Math.max.apply(null,allVals.concat([0]))*1.12);
+  var maxV = opts.maxY || niceMax(Math.max.apply(null,allVals.concat([0]))*1.12);
   if(minV>0) minV=0;
   var range = maxV-minV || 1;
   var n=cats.length;
@@ -1300,7 +1326,7 @@ var NAV = [
   {id:'period', label:'สรุปต่องวด', sub:'เลือกงวด · วิเคราะห์ผลผลิต', icon:'🌳'},
   {id:'zone', label:'ผัง Zone & ต้นยาง', sub:'Zone · พนักงาน · ต้น', icon:'🗺️'},
   {id:'map', label:'แผนที่ และ นน. ยาง', sub:'พิกัดแปลง · น้ำหนักรายคน', icon:'📍'},
-  {id:'panel', label:'ประเมินหน้ากรีด', sub:'Leader กรอกผลประเมินรายคน', icon:'✍️'},
+  {id:'panel', label:(IS_LEADER?'ประเมินหน้ากรีด':'ผลประเมินหน้ากรีด'), sub:(IS_LEADER?'กรอกผลประเมินรายคน':'คะแนน · แนวโน้ม · ต้องติดตาม'), icon:(IS_LEADER?'✍️':'📋')},
   {id:'expense', label:'ค่าใช้จ่ายตามหมวด', sub:'pivot ตามเดือน', icon:'💸'}
 ];
 var NAV_UTIL = [
@@ -2447,7 +2473,7 @@ function bindTabEvents(){
   else if(ACTIVE==='expense') bindExpenseEvents();
   else if(ACTIVE==='import') bindImportEvents();
   else if(ACTIVE==='map') bindMapRubberEvents();
-  else if(ACTIVE==='panel') bindPanelEvalEvents();
+  else if(ACTIVE==='panel') bindPanelEvents();
 }
 
 /* TAB: แผนที่ และ นน. ยาง — ฝังอยู่ในไฟล์นี้ (บล็อก MAP_RUBBER_B64) ไม่ต้องมี map_rubber.html แยก */
@@ -2494,7 +2520,445 @@ function bindMapRubberEvents(){
   });
 }
 
-/* TAB: ประเมินหน้ากรีด — ฝังอยู่ในไฟล์นี้ (บล็อก PANEL_EVAL_B64) บันทึกลง Google Sheet (ชีต panel_evals / panel_config) */
+/* ===================================================================
+   TAB: ผลประเมินหน้ากรีด — รายงานสำหรับ Admin (อ่านจากชีต panel_evals ผ่าน Apps Script)
+   Leader ใช้แท็บเดียวกันเพื่อกรอกผล (หน้ากรอกอยู่ในกรอบ PANEL_EVAL_B64)
+   =================================================================== */
+var PANEL_CRIT = [
+  {k:'depth', name:'ความลึก / บาดเนื้อไม้',  short:'ความลึก',    bad:'บาดเนื้อไม้'},
+  {k:'bark',  name:'ความสิ้นเปลืองเปลือก',   short:'เปลือก',      bad:'หนา เปลืองเปลือก'},
+  {k:'angle', name:'มุม / แนวรอยกรีด',       short:'มุมกรีด',     bad:'คดเคี้ยว ยางล้นราง'},
+  {k:'clean', name:'ความสะอาด / อุปกรณ์',    short:'ความสะอาด',   bad:'สกปรก/ชำรุด/ยางหก'}
+];
+var PANEL_LV = {3:'ดี', 2:'พอใช้', 1:'ปรับปรุง'};
+var PANEL_GR = {4:'ดีมาก', 3:'ดี', 2:'พอใช้', 1:'ต้องปรับปรุง'};
+var PANEL_MON = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+var PANEL_DEFAULT_ROSTER = [[1,"จ่อ",1,1105],[2,"จามโทย",1,1204],[3,"จายอ่องเมือง",1,1170],[4,"จำหลู่",1,1393],[5,"เจียม",1,1170],[6,"ชฎาพร",1,1060],[7,"ดอย",1,1173],[8,"ดาว",1,1204],[9,"ต้า",1,1280],[10,"เต",1,900],[11,"ทอย",1,1309],[12,"ทูลสาม",1,1128],[13,"เทย",1,1090],[14,"โทย",1,1182],[15,"นะ",1,920],[16,"ก้อง",1,394],[17,"นายกอ",1,1273],[18,"นิด",1,914],[19,"หมี่ชุ่ม",1,1010],[20,"บุญยืน",1,1176],[21,"บูยู",1,900],[22,"ปันมล",1,1165],[23,"ป่าง",1,1086],[24,"ป้าอ้วน",1,1200],[25,"ปิยะ",1,946],[26,"มลปา",1,1179],[27,"มลหลู่",1,1180],[28,"มะรอด",1,997],[29,"มันสี่",1,1190],[30,"มูหริ่ง",1,1390],[31,"เมอู",1,900],[32,"โม้ง",1,1508],[33,"ยายหอม",1,918],[34,"ยิ้ม",1,1017],[35,"แดง",1,1150],[36,"ลำไย",1,1024],[37,"วาว",1,1393],[38,"หม่องหนุ่ม",1,639],[39,"สาม",1,1132],[40,"สาว",1,1207],[41,"สี่",1,1290],[42,"สุภาณี",1,1237],[43,"หนุ่ม",1,1127],[44,"หม่านหลู่",1,1162],[45,"หยอย",1,1454],[46,"หลู่เจียม",1,1180],[47,"อ้วน",1,1310],[48,"ออ",1,1273],[49,"อ่อง",1,1332],[50,"บูชือ",1,870],[51,"นางคำ",1,1180],[52,"บูม",2,970],[53,"คำ2",2,1080],[54,"แสงมัน",2,1150],[55,"ลุงคำ2",2,1400],[56,"ลุงคำ(นสด)",2,1042],[57,"แก้ว",2,1270],[58,"ทวีชาต",2,1160],[59,"แก้ว(ป่าง)",2,1153],[60,"จามสี่",2,1001],[61,"จะคา",2,825],[62,"อุดม",3,1240],[63,"บลู",3,1165],[64,"อาซอง",3,1080],[65,"ลุงแดง",3,1300],[66,"นายจันทร์",3,1100],[67,"เจย",3,1244],[68,"ยุ",4,1257],[69,"อี๊ด",4,1349],[70,"จามหญิง",4,1271],[71,"หญิง",4,1272],[72,"คมสันต์",4,1079],[73,"หม่องเงิน",4,1140],[74,"เลิศ",4,1250],[75,"ณะริน",4,1365],[76,"สมบูรณ์(หท)",4,1236],[77,"ทองใบ",4,1236],[78,"พายุ",4,1272],[79,"นางหลอด",4,1144],[80,"เมีย",4,1140],[81,"มูล",4,1471],[82,"ภา",4,1490],[83,"สมศักดิ์",4,1290],[84,"ป้าจันทร์",4,1382],[85,"ลพ",4,1126],[86,"ก้อย",4,1259],[87,"สมบูรณ์(ปช)",4,1234],[88,"พัส",4,1321],[89,"เอ๋",4,1356],[90,"อร",4,1056]];
+var PANEL_DEFAULT_SUP = {1:'สุนทอน',2:'วุฒิพงษ์',3:'วุฒิพงษ์',4:'อาร์ท'};
+
+var panelState = {
+  view: (IS_LEADER ? 'entry' : 'report'),
+  round: null, zone: 'all', grade: 'all', search: '', sortKey: 'score', sortDir: 1,
+  status: 'idle', error: null, errorCode: null, rows: [], roster: null, loadedAt: null, sig: ''
+};
+var panelTimer = null;
+
+function panelThDate(s){
+  var m = String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return String(s||'');
+  return Number(m[3])+' '+PANEL_MON[Number(m[2])-1]+' '+String((Number(m[1])+543)%100);
+}
+function panelHhmm(t){
+  var d = new Date(t); function p(n){ return n<10?'0'+n:''+n; }
+  return p(d.getHours())+':'+p(d.getMinutes());
+}
+
+/* ---------- ตรรกะคะแนน (เหมือนแอปกรอกประเมิน) ---------- */
+function panelGrade(s){
+  if(!s) return null;
+  var v = PANEL_CRIT.map(function(c){ return Number(s[c.k])||0; }).filter(function(x){ return x>0; });
+  if(!v.length) return null;
+  if(v.length<4) return {done:false, n:v.length};
+  var sum = v.reduce(function(a,b){ return a+b; },0);
+  var g = sum>=11?4 : sum>=9?3 : sum>=7?2 : 1;
+  if(Number(s.depth)===1 && g>2) g = 2;               // บาดเนื้อไม้ ได้ไม่เกิน "พอใช้"
+  return {done:true, sum:sum, pct:Math.round(sum/12*100), g:g};
+}
+function panelNeedsFollow(s){
+  var e = panelGrade(s);
+  return !!(e && e.done && (e.g<=2 || PANEL_CRIT.some(function(c){ return Number(s[c.k])===1; })));
+}
+function panelIssues(s){
+  var bad = PANEL_CRIT.filter(function(c){ return Number(s[c.k])===1; }).map(function(c){ return c.bad; });
+  if(bad.length) return bad.join(' · ');
+  return PANEL_CRIT.filter(function(c){ return Number(s[c.k])===2; }).map(function(c){ return c.short+'พอใช้'; }).join(' · ');
+}
+function panelPill(e){
+  if(!e) return '<span class="pill">ยังไม่ประเมิน</span>';
+  if(!e.done) return '<span class="pill">ไม่ครบ '+e.n+'/4</span>';
+  return '<span class="pill gp'+e.g+'">'+PANEL_GR[e.g]+'</span>';
+}
+function panelDots(s){
+  return '<span class="pdots">'+PANEL_CRIT.map(function(c){
+    var v = Number((s||{})[c.k])||0;
+    return '<i class="l'+v+'" title="'+esc(c.short)+': '+(v?PANEL_LV[v]:'ยังไม่ประเมิน')+'"></i>';
+  }).join('')+'</span>';
+}
+function panelGradeColors(pal){ return {4:pal.accent, 3:pal.teal, 2:pal.amber, 1:pal.red}; }
+
+/* ---------- รายชื่อ (จากชีต panel_config หรือค่าเริ่มต้น) ---------- */
+function panelRosterData(){
+  var src = panelState.roster;
+  var ws;
+  if(src && Array.isArray(src.workers) && src.workers.length){
+    ws = src.workers.map(function(w){ return {id:+w.id, name:String(w.name||'').trim(), zone:+w.zone||1, trees:+w.trees||0, active:w.active!==false}; });
+  } else {
+    ws = PANEL_DEFAULT_ROSTER.map(function(r){ return {id:r[0], name:r[1], zone:r[2], trees:r[3], active:true}; });
+  }
+  ws = ws.filter(function(w){ return w.id>0 && w.name; });
+  return {workers:ws, sup:(src && src.sup) || PANEL_DEFAULT_SUP};
+}
+
+/* ผลผลิตงวดล่าสุด: ชื่อ -> g/ต้น (นน.ขายจริง ÷ ต้นกรีด) */
+function panelYieldMap(){
+  var acc = {}, out = {};
+  if(typeof WORKERS==='undefined' || !WORKERS) return out;
+  WORKERS.forEach(function(w){
+    if(w.period!==LATEST_PERIOD || !w.name) return;
+    var a = acc[w.name] || (acc[w.name]={w:0,t:0});
+    a.w += Number(w.weight)||0; a.t += Number(w.trees)||0;
+  });
+  Object.keys(acc).forEach(function(n){ if(acc[n].t>0) out[n] = acc[n].w*1000/acc[n].t; });
+  return out;
+}
+
+/* ---------- โมเดลรายงาน ---------- */
+function panelModel(){
+  var R = panelRosterData();
+  var active = R.workers.filter(function(w){ return w.active; });
+  var byDate = {};
+  panelState.rows.forEach(function(r){ if(!byDate[r.date]) byDate[r.date] = {}; byDate[r.date][r.id] = r; });
+  var rounds = Object.keys(byDate).filter(function(d){
+    return Object.keys(byDate[d]).some(function(id){ return !!panelGrade(byDate[d][id]); });
+  }).sort();
+  var cur = (panelState.round && rounds.indexOf(panelState.round)>=0) ? panelState.round : (rounds[rounds.length-1] || null);
+  var ci = rounds.indexOf(cur);
+  var prev = ci>0 ? rounds[ci-1] : null;
+
+  function statOf(date){
+    var out = {date:date, list:[], n:0, avg:null, dist:{4:0,3:0,2:0,1:0}, good:0, follow:0};
+    if(!date) return out;
+    active.forEach(function(w){
+      var s = (byDate[date]||{})[w.id], e = panelGrade(s);
+      if(e && e.done){ out.list.push({w:w, s:s, e:e}); out.dist[e.g]++; if(e.g>=3) out.good++; if(panelNeedsFollow(s)) out.follow++; }
+    });
+    out.n = out.list.length;
+    out.avg = out.n ? out.list.reduce(function(a,x){ return a+x.e.pct; },0)/out.n : null;
+    return out;
+  }
+  var st = statOf(cur), pv = statOf(prev);
+
+  var trend = rounds.slice(-12).map(function(d){ var x=statOf(d); return {date:d, avg:x.avg, goodPct:x.n? x.good/x.n*100 : null, n:x.n}; });
+
+  var sup = R.sup || {};
+  var zones = {};
+  active.forEach(function(w){ if(!zones[w.zone]) zones[w.zone] = {zone:w.zone, total:0, ev:[]}; zones[w.zone].total++; });
+  st.list.forEach(function(x){ zones[x.w.zone].ev.push(x); });
+  var zoneRows = Object.keys(zones).map(Number).sort(function(a,b){ return a-b; }).map(function(z){
+    var Z = zones[z], dist = {4:0,3:0,2:0,1:0}, follow = 0;
+    Z.ev.forEach(function(x){ dist[x.e.g]++; if(panelNeedsFollow(x.s)) follow++; });
+    return {zone:z, sup:String(sup[z]||'').trim(), total:Z.total, n:Z.ev.length,
+            avg: Z.ev.length ? Z.ev.reduce(function(a,x){ return a+x.e.pct; },0)/Z.ev.length : null, dist:dist, follow:follow};
+  });
+
+  var crit = PANEL_CRIT.map(function(c){
+    var cnt = {3:0,2:0,1:0};
+    st.list.forEach(function(x){ var v = Number(x.s[c.k])||0; if(cnt[v]!==undefined) cnt[v]++; });
+    return {c:c, cnt:cnt, total:st.n};
+  }).sort(function(a,b){ return (b.cnt[1]*2+b.cnt[2]) - (a.cnt[1]*2+a.cnt[2]); });
+
+  var ym = panelYieldMap();
+  var prevMap = {}; pv.list.forEach(function(x){ prevMap[x.w.id] = x; });
+  var people = active.map(function(w){
+    var s = (byDate[cur]||{})[w.id] || null, e = panelGrade(s), p = prevMap[w.id] || null;
+    return {w:w, s:s, e:e, prev:p, delta:(e&&e.done&&p)? e.sum-p.e.sum : null, yieldG: (ym[w.name]!==undefined? ym[w.name] : null)};
+  });
+  var follows = st.list.filter(function(x){ return panelNeedsFollow(x.s); }).sort(function(a,b){ return a.e.sum-b.e.sum || a.w.id-b.w.id; });
+  var todo = people.filter(function(p){ return !(p.e && p.e.done); });
+
+  return {R:R, active:active, rounds:rounds, cur:cur, prev:prev, st:st, pv:pv, trend:trend, zoneRows:zoneRows,
+          crit:crit, people:people, follows:follows, todo:todo, ym:ym};
+}
+
+/* ---------- ส่วนประกอบหน้าจอ ---------- */
+function panelViewToggle(){
+  if(IS_LEADER) return '';
+  return '<div class="toggle-group" id="panelViewToggle">'+
+    '<button type="button" data-pview="report"'+(panelState.view==='report'?' class="on"':'')+'>📊 รายงานผล</button>'+
+    '<button type="button" data-pview="entry"'+(panelState.view==='entry'?' class="on"':'')+'>✍️ กรอกประเมิน</button></div>';
+}
+function panelStateCard(ico, title, text, btn){
+  return '<div class="card pstate"><div class="ico">'+ico+'</div><h3 style="font-size:14px;margin:8px 0 4px;">'+title+'</h3>'+
+    '<p class="hint" style="margin:0 auto 12px;max-width:520px;">'+text+'</p>'+(btn||'')+'</div>';
+}
+
+function renderPanelReport(){
+  var head = function(sub, ctrl){
+    return '<div class="row-head"><div><h2>📋 ผลประเมินหน้ากรีด • คุณภาพการกรีดรายคน</h2><div class="subtext">'+sub+'</div></div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'+panelViewToggle()+(ctrl||'')+'</div></div>';
+  };
+  var retry = '<button class="btn on" type="button" id="panelRefresh">↻ ลองใหม่</button>';
+
+  if(!panelState.loadedAt){
+    if(panelState.status==='error'){
+      var old = (panelState.errorCode==='BAD_ACTION');
+      return head('อ่านข้อมูลจาก Google Sheet ไม่สำเร็จ')+
+        panelStateCard(old?'🧩':'⚠️', old?'Apps Script ยังเป็นเวอร์ชันเก่า':'โหลดผลประเมินไม่สำเร็จ',
+          old ? 'ให้วาง Code.gs เวอร์ชันล่าสุดแล้ว Deploy → Manage deployments → New version จากนั้นกด "ลองใหม่"' : esc(panelState.error||'ไม่ทราบสาเหตุ'), retry);
+    }
+    return head('กำลังโหลดผลประเมินจาก Google Sheet…')+panelStateCard('⏳','กำลังโหลด…','ดึงผลประเมินทุกรอบและรายชื่อคนงาน','');
+  }
+
+  var M = panelModel();
+  var pal = palette(), gc = panelGradeColors(pal);
+  var sub = 'ข้อมูลจาก Google Sheet (ชีต panel_evals) · อัปเดต '+panelHhmm(panelState.loadedAt)+' น.'+
+    (panelState.status==='loading' ? ' · กำลังรีเฟรช…' : '')+(panelState.status==='error' ? ' · <span style="color:var(--red)">รีเฟรชไม่สำเร็จ แสดงข้อมูลเดิม</span>' : '');
+
+  if(!M.cur){
+    return head(sub, '<button class="btn" type="button" id="panelRefresh">↻ รีเฟรช</button>')+
+      panelStateCard('📝','ยังไม่มีผลประเมิน','เมื่อหัวหน้า (Leader) กรอกผลประเมินอย่างน้อย 1 คน รายงานนี้จะแสดงคะแนน แนวโน้ม และรายชื่อที่ต้องติดตามอัตโนมัติ',
+        IS_LEADER?'':'<button class="btn on" type="button" data-pview="entry">✍️ ไปหน้ากรอกประเมิน</button>');
+  }
+
+  var st = M.st, pv = M.pv;
+  var roundSel = '<select class="select" id="panelRound" aria-label="เลือกรอบประเมิน">'+
+    M.rounds.slice().reverse().map(function(d){ return '<option value="'+d+'"'+(d===M.cur?' selected':'')+'>รอบ '+panelThDate(d)+'</option>'; }).join('')+'</select>';
+  var ctrl = roundSel+
+    '<button class="btn" type="button" id="panelLine" title="คัดลอกสรุปส่ง LINE">💬 คัดลอกสรุป LINE</button>'+
+    '<button class="btn" type="button" id="panelCsv" title="ดาวน์โหลด CSV ของรอบนี้">⬇ CSV</button>'+
+    '<button class="btn" type="button" id="panelRefresh" title="โหลดข้อมูลใหม่">↻</button>';
+
+  /* KPI */
+  var dAvg = (st.avg!=null && pv.avg!=null) ? Math.round(st.avg-pv.avg) : null;
+  var dTxt = dAvg==null ? (M.prev? '—' : 'รอบแรก ยังไม่มีข้อมูลเปรียบเทียบ')
+    : (dAvg>0?'▲ +'+dAvg : dAvg<0?'▼ '+dAvg : '＝ เท่าเดิม')+' จุด จากรอบ '+panelThDate(M.prev);
+  var cover = M.active.length ? Math.round(st.n/M.active.length*100) : 0;
+  var goodPct = st.n ? Math.round(st.good/st.n*100) : 0;
+  var kpis = '<div class="grid grid-4">'+
+    '<div class="kpi hero"><div class="label">คะแนนเฉลี่ยหน้ากรีด</div><div class="value">'+(st.avg!=null?Math.round(st.avg)+'%':'—')+'</div><div class="foot">'+dTxt+'</div></div>'+
+    '<div class="kpi"><div class="label" style="color:var(--muted)">ประเมินแล้ว</div><div class="value">'+st.n+' <span style="font-size:13px;color:var(--muted);font-weight:500">/ '+M.active.length+' คน</span></div>'+
+      '<div class="pmeter"><i style="width:'+cover+'%"></i></div><div class="foot" style="color:var(--muted)">ครอบคลุม '+cover+'% ของคนกรีดทั้งหมด</div></div>'+
+    '<div class="kpi good"><div class="label" style="color:var(--muted)">ระดับ ดี – ดีมาก</div><div class="value">'+st.good+' คน</div><div class="foot" style="color:var(--muted)">'+goodPct+'% ของที่ประเมิน</div></div>'+
+    '<div class="kpi warn"><div class="label" style="color:var(--muted)">ต้องติดตาม</div><div class="value">'+st.follow+' คน</div><div class="foot" style="color:var(--muted)">ผลพอใช้/ปรับปรุง หรือมีข้อที่ต้องแก้</div></div>'+
+  '</div>';
+
+  /* แนวโน้ม / สัดส่วน / จุดอ่อน */
+  var trendCard;
+  if(M.trend.length>=2){
+    var tsvg = lineChart({
+      categories:M.trend.map(function(t){ return panelThDate(t.date).replace(/ \d+$/,''); }),
+      series:[{label:'คะแนนเฉลี่ย (%)', color:pal.accent, data:M.trend.map(function(t){ return t.avg||0; }), area:true},
+              {label:'ดี–ดีมาก (%)', color:pal.amber, data:M.trend.map(function(t){ return t.goodPct||0; }), dash:'5 4'}],
+      maxY:100, yFmt:function(v){ return Math.round(v)+'%'; }, tipFmt:function(v){ return fmtNum(v,0)+'%'; }
+    });
+    trendCard = '<div class="card"><h3>📈 แนวโน้มคะแนนต่อรอบ</h3><div class="hint">คะแนนเฉลี่ย และสัดส่วนคนที่อยู่ระดับ ดี–ดีมาก</div><div class="chart-box">'+tsvg+'</div>'+
+      legendHTML([{name:'คะแนนเฉลี่ย (%)',color:pal.accent},{name:'ดี–ดีมาก (%)',color:pal.amber}])+'</div>';
+  } else {
+    trendCard = '<div class="card"><h3>📈 แนวโน้มคะแนนต่อรอบ</h3><div class="hint">แสดงเมื่อมีผลประเมินตั้งแต่ 2 รอบขึ้นไป</div>'+
+      '<div class="compare-empty" style="height:220px"><div style="font-size:26px">🗓️</div><p class="hint" style="margin:8px 0 0">ตอนนี้มี 1 รอบ (รอบ '+panelThDate(M.cur)+')<br>ประเมินรอบถัดไปเพื่อดูแนวโน้ม</p></div></div>';
+  }
+  var donut = donutChart({size:190, items:[4,3,2,1].map(function(g){ return {name:PANEL_GR[g], value:st.dist[g], color:gc[g]}; }),
+                          tipFmt:function(v){ return v+' คน'; }, centerFmt:function(v){ return v+' คน'; }});
+  var distCard = '<div class="card"><h3>🎯 สัดส่วนผลประเมิน</h3><div class="hint">รอบ '+panelThDate(M.cur)+' · '+st.n+' คน</div>'+
+    '<div class="chart-box" style="max-width:210px;margin:0 auto;">'+donut+'</div>'+
+    '<div class="legend" style="justify-content:center;">'+[4,3,2,1].map(function(g){
+      return '<span><i style="background:'+gc[g]+'"></i>'+PANEL_GR[g]+' <b>'+st.dist[g]+'</b></span>'; }).join('')+'</div></div>';
+  var critCard = '<div class="card"><h3>🛠️ จุดที่ต้องแก้ไขบ่อย</h3><div class="hint">เรียงจากหัวข้อที่มีคนต้องปรับปรุงมากที่สุด</div><div class="pcrit">'+
+    M.crit.map(function(x){
+      var t = Math.max(1,x.total), seg = function(v,col){ return '<i style="width:'+(x.cnt[v]/t*100)+'%;background:'+col+'" title="'+PANEL_LV[v]+' '+x.cnt[v]+' คน"></i>'; };
+      return '<div class="pcrit-row"><div class="top"><b>'+esc(x.c.name)+'</b><span style="color:var(--muted)">ปรับปรุง <b style="color:var(--red)">'+x.cnt[1]+'</b> · พอใช้ '+x.cnt[2]+'</span></div>'+
+        '<div class="pstack">'+seg(3,pal.accent)+seg(2,pal.amber)+seg(1,pal.red)+'</div></div>';
+    }).join('')+'</div>'+legendHTML([{name:'ดี',color:pal.accent},{name:'พอใช้',color:pal.amber},{name:'ปรับปรุง',color:pal.red}])+'</div>';
+  var row2 = '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(290px,1fr))">'+trendCard+distCard+critCard+'</div>';
+
+  /* ตารางรายโซน */
+  var zrows = M.zoneRows.map(function(z){
+    var avg = z.avg==null ? '—' : Math.round(z.avg)+'%';
+    var bar = z.avg==null ? '' : '<div class="pmeter" style="margin:4px 0 0 auto;width:92px"><i style="width:'+Math.round(z.avg)+'%"></i></div>';
+    return '<tr><td><b>โซน '+z.zone+'</b></td><td>'+esc(z.sup||'—')+'</td>'+
+      '<td class="num">'+z.n+' / '+z.total+'</td>'+
+      '<td class="num"><b>'+avg+'</b>'+bar+'</td>'+
+      '<td class="num">'+(z.dist[4]||'–')+'</td><td class="num">'+(z.dist[3]||'–')+'</td><td class="num">'+(z.dist[2]||'–')+'</td>'+
+      '<td class="num" style="'+(z.dist[1]?'color:var(--red);font-weight:600':'')+'">'+(z.dist[1]||'–')+'</td>'+
+      '<td class="num">'+(z.follow?'<span class="pill red">'+z.follow+' คน</span>':'<span class="pill accent">ไม่มี</span>')+'</td></tr>';
+  }).join('');
+  var zoneCard = '<div class="card tight"><div class="card-head"><h3 style="margin:0;">🗺️ สรุปรายโซน / หัวหน้าโซน</h3><span class="subtext" style="margin:0">รอบ '+panelThDate(M.cur)+'</span></div>'+
+    '<div class="table-wrap"><table><thead><tr><th>โซน</th><th>หัวหน้า</th><th class="num">ประเมินแล้ว</th><th class="num">คะแนนเฉลี่ย</th>'+
+    '<th class="num">ดีมาก</th><th class="num">ดี</th><th class="num">พอใช้</th><th class="num">ปรับปรุง</th><th class="num">ต้องติดตาม</th></tr></thead><tbody>'+zrows+'</tbody></table></div></div>';
+
+  /* ต้องติดตาม + ผลผลิต */
+  var followItems = M.follows.slice(0,8).map(function(x){
+    var worse = x.e.g===1 || Number(x.s.depth)===1;
+    var pe = (M.pv.list.filter(function(y){ return y.w.id===x.w.id; })[0]) || null;
+    return '<div class="insight '+(worse?'red':'amber')+'"><div class="insight-ico">'+(worse?'🔴':'🟠')+'</div><div style="min-width:0">'+
+      '<b>'+x.w.id+' '+esc(x.w.name)+' · โซน '+x.w.zone+' — '+PANEL_GR[x.e.g]+' ('+x.e.sum+'/12)</b>'+
+      '<p>'+esc(panelIssues(x.s)||'—')+(pe?' · รอบก่อน '+PANEL_GR[pe.e.g]:'')+(x.s.note?' — '+esc(x.s.note):'')+'</p></div></div>';
+  }).join('');
+  var followCard = '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;"><h3 style="margin:0;">🚩 ต้องติดตามเป็นพิเศษ</h3>'+
+    (M.follows.length>8?'<button class="btn" type="button" data-pfilter="follow">ดูทั้งหมด '+M.follows.length+' คน</button>':'')+'</div>'+
+    (followItems ? '<div class="pfollow">'+followItems+'</div>' : '<div class="insight accent"><div class="insight-ico">✅</div><div><b>ไม่มีคนที่ต้องติดตามในรอบนี้</b><p>ทุกคนที่ประเมินอยู่ระดับ ดี–ดีมาก และไม่มีหัวข้อที่ต้องปรับปรุง</p></div></div>')+
+    (M.todo.length ? '<div class="insight amber" style="margin-top:10px"><div class="insight-ico">🕓</div><div><b>ยังไม่ได้ประเมิน '+M.todo.length+' คน</b><p>'+
+      (function(){ var byZ={}; M.todo.forEach(function(p){ byZ[p.w.zone]=(byZ[p.w.zone]||0)+1; });
+        return Object.keys(byZ).sort(function(a,b){return a-b;}).map(function(z){ return 'โซน '+z+': '+byZ[z]+' คน'; }).join(' · '); })()+
+      ' <a href="#" data-pfilter="todo" style="color:var(--accent);font-weight:600">ดูรายชื่อ</a></p></div></div>' : '')+'</div>';
+
+  var good = [], low = [];
+  M.people.forEach(function(p){ if(p.e&&p.e.done&&p.yieldG!=null){ (p.e.g>=3?good:low).push(p.yieldG); } });
+  var avgOf = function(a){ return a.reduce(function(s,v){return s+v;},0)/a.length; };
+  var prodCard;
+  if(good.length>=3 && low.length>=3){
+    var ag = avgOf(good), al = avgOf(low), df = (ag-al)/al*100;
+    prodCard = '<div class="card"><h3>⚖️ หน้ากรีดกับผลผลิต (งวด '+esc(LATEST_PERIOD)+')</h3><div class="hint">น้ำหนักขายจริง ÷ ต้นกรีด เทียบตามระดับผลประเมินรอบนี้</div>'+
+      '<div class="grid grid-2" style="gap:10px">'+
+      '<div class="zone-stat accent"><span style="font-size:10.5px">ดี – ดีมาก ('+good.length+' คน)</span><b>'+fmtNum(ag,0)+' g/ต้น</b></div>'+
+      '<div class="zone-stat"><span style="font-size:10.5px;color:var(--muted)">พอใช้ – ปรับปรุง ('+low.length+' คน)</span><b>'+fmtNum(al,0)+' g/ต้น</b></div></div>'+
+      '<p class="hint" style="margin:12px 0 0">'+(df>=0?'กลุ่ม ดี–ดีมาก ได้มากกว่า ':'กลุ่ม ดี–ดีมาก ได้น้อยกว่า ')+'<b>'+fmtNum(Math.abs(df),1)+'%</b> · เป็นการเปรียบเทียบเชิงข้อมูล ใช้ประกอบการตัดสินใจ ไม่ใช่ข้อสรุปเชิงเหตุผล</p></div>';
+  } else {
+    prodCard = '<div class="card"><h3>⚖️ หน้ากรีดกับผลผลิต</h3><div class="hint">เทียบน้ำหนัก/ต้น งวดล่าสุด กับผลประเมิน</div>'+
+      '<div class="compare-empty" style="height:150px"><p class="hint" style="margin:0">ต้องมีผู้ที่ประเมินและมีข้อมูลผลผลิตอย่างน้อยกลุ่มละ 3 คน<br>(ตอนนี้ ดี–ดีมาก '+good.length+' คน · พอใช้–ปรับปรุง '+low.length+' คน)</p></div></div>';
+  }
+  var row4 = '<div class="grid grid-2">'+followCard+prodCard+'</div>';
+
+  /* ตารางรายคน */
+  var zopts = '<option value="all">ทุกโซน</option>'+M.zoneRows.map(function(z){ return '<option value="'+z.zone+'"'+(String(panelState.zone)===String(z.zone)?' selected':'')+'>โซน '+z.zone+'</option>'; }).join('');
+  var gopts = [['all','ทุกผลประเมิน'],['follow','ต้องติดตาม'],['4','ดีมาก'],['3','ดี'],['2','พอใช้'],['1','ต้องปรับปรุง'],['todo','ยังไม่ประเมิน']]
+    .map(function(o){ return '<option value="'+o[0]+'"'+(panelState.grade===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('');
+  var table = '<div class="card tight"><div class="card-head"><h3 style="margin:0;">👥 ผลประเมินรายคน <span class="subtext" id="panelCount" style="margin:0 0 0 6px"></span></h3>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;"><select class="select" id="panelZone" aria-label="กรองโซน">'+zopts+'</select>'+
+    '<select class="select" id="panelGradeSel" aria-label="กรองผลประเมิน">'+gopts+'</select>'+
+    '<input class="input" id="panelSearch" placeholder="ค้นหาชื่อหรือเลขแปลง" value="'+esc(panelState.search)+'" style="width:180px"></div></div>'+
+    '<div class="table-scroll" id="panelTbl">'+panelTableHtml(M)+'</div>'+
+    '<div class="table-foot">เกณฑ์: รวม 4 หัวข้อ เต็ม 12 · ดีมาก 11–12 · ดี 9–10 · พอใช้ 7–8 · ต้องปรับปรุง ต่ำกว่า 7 · บาดเนื้อไม้ได้ไม่เกิน "พอใช้" · ช่อง ± คือผลต่างคะแนนจากรอบก่อน</div></div>';
+
+  return head(sub, ctrl)+kpis+row2+zoneCard+row4+table;
+}
+
+function panelTableHtml(M){
+  var q = panelState.search.trim(), zsel = panelState.zone, gsel = panelState.grade;
+  var list = M.people.filter(function(p){
+    if(zsel!=='all' && String(p.w.zone)!==String(zsel)) return false;
+    if(q && p.w.name.indexOf(q)<0 && String(p.w.id)!==q) return false;
+    var done = !!(p.e&&p.e.done);
+    if(gsel==='todo') return !done;
+    if(gsel==='follow') return done && panelNeedsFollow(p.s);
+    if(gsel==='4'||gsel==='3'||gsel==='2'||gsel==='1') return done && String(p.e.g)===gsel;
+    return true;
+  });
+  var key = panelState.sortKey, dir = panelState.sortDir;
+  var val = function(p){
+    if(key==='id') return p.w.id;
+    if(key==='name') return p.w.name;
+    if(key==='zone') return p.w.zone*1000+p.w.id;
+    if(key==='delta') return p.delta;
+    if(key==='yield') return p.yieldG;
+    return (p.e&&p.e.done)? p.e.sum*1000 + p.w.id/1000 : null;
+  };
+  list.sort(function(a,b){
+    var x = val(a), y = val(b);
+    if(x==null && y==null) return a.w.id-b.w.id;
+    if(x==null) return 1; if(y==null) return -1;
+    if(typeof x==='string') return x.localeCompare(y,'th')*dir;
+    return (x-y)*dir;
+  });
+  var th = function(k,l,cls){ return '<th class="sortable'+(cls?' '+cls:'')+'" data-pkey="'+k+'">'+l+(key===k?(dir>0?' ▲':' ▼'):'')+'</th>'; };
+  var rows = list.map(function(p){
+    var e = p.e, d = p.delta;
+    var dCell = d==null ? '<span style="color:var(--muted)">'+(e&&e.done&&!p.prev?'ใหม่':'–')+'</span>'
+      : '<span class="delta '+(d>0?'up':d<0?'down':'flat')+'">'+(d>0?'▲ +'+d : d<0?'▼ '+d : '＝')+'</span>';
+    var score = (e&&e.done) ? '<span class="pscore"><b>'+e.sum+'</b><span style="color:var(--muted)">/12</span><div class="pmeter"><i style="width:'+e.pct+'%;background:'+(e.g>=3?'var(--accent)':e.g===2?'var(--amber)':'var(--red)')+'"></i></div></span>' : '<span style="color:var(--muted)">–</span>';
+    return '<tr><td class="num" style="color:var(--muted)">'+p.w.id+'</td><td style="font-weight:600">'+esc(p.w.name)+'</td><td>โซน '+p.w.zone+'</td>'+
+      '<td>'+panelPill(e)+'</td><td>'+score+'</td><td>'+panelDots(p.s)+'</td><td class="num">'+dCell+'</td>'+
+      '<td class="num">'+(p.yieldG!=null?fmtNum(p.yieldG,0):'–')+'</td>'+
+      '<td style="color:var(--ink-soft)">'+esc((p.s&&p.s.by)||'–')+'</td>'+
+      '<td>'+(p.s&&p.s.note?'<span class="pnote" title="'+esc(p.s.note)+'">'+esc(p.s.note)+'</span>':'<span style="color:var(--muted)">–</span>')+'</td></tr>';
+  }).join('');
+  panelState.cnt = list.length+' / '+M.people.length+' คน';
+  return '<table><thead><tr>'+th('id','แปลง','num')+th('name','ชื่อ')+th('zone','โซน')+'<th>ผลประเมิน</th>'+th('score','คะแนน')+
+    '<th>4 หัวข้อ</th>'+th('delta','± รอบก่อน','num')+th('yield','นน./ต้น (g) งวด '+esc(LATEST_PERIOD),'num')+'<th>ผู้ประเมิน</th><th>บันทึก</th></tr></thead>'+
+    '<tbody>'+(rows||'<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:24px">ไม่พบรายการตามตัวกรอง</td></tr>')+'</tbody></table>';
+}
+function panelSetCount(){ var el = document.getElementById('panelCount'); if(el) el.textContent = panelState.cnt||''; }
+function panelRefreshTable(){
+  var box = document.getElementById('panelTbl'); if(!box) return;
+  box.innerHTML = panelTableHtml(panelModel());
+  panelSetCount(); bindPanelSort();
+}
+function bindPanelSort(){
+  document.querySelectorAll('#panelTbl th.sortable').forEach(function(th){
+    th.addEventListener('click', function(){
+      var k = th.getAttribute('data-pkey');
+      if(panelState.sortKey===k) panelState.sortDir *= -1; else { panelState.sortKey=k; panelState.sortDir = (k==='name'||k==='id'||k==='zone'||k==='score')? 1 : -1; }
+      panelRefreshTable();
+    });
+  });
+}
+
+/* ---------- ส่งออก / คัดลอก ---------- */
+function panelLineText(M){
+  var st = M.st, pv = M.pv, d = st.dist;
+  var t = '📋 ผลประเมินหน้ากรีด รอบวันที่ '+panelThDate(M.cur)+'\nประเมินแล้ว '+st.n+'/'+M.active.length+' คน'+(st.avg!=null?' · เฉลี่ย '+Math.round(st.avg)+'%':'')+
+    (pv.avg!=null?' (รอบก่อน '+Math.round(pv.avg)+'%)':'')+'\nดีมาก '+d[4]+' · ดี '+d[3]+' · พอใช้ '+d[2]+' · ต้องปรับปรุง '+d[1]+'\n';
+  var sup = M.R.sup || {};
+  var groups = {};
+  M.zoneRows.forEach(function(z){ var key = z.sup || ('#'+z.zone); (groups[key]=groups[key]||{sup:z.sup,zs:[]}).zs.push(z.zone); });
+  Object.keys(groups).forEach(function(k){
+    var G = groups[k];
+    var f = M.follows.filter(function(x){ return G.zs.indexOf(x.w.zone)>=0; });
+    var n = M.st.list.filter(function(x){ return G.zs.indexOf(x.w.zone)>=0; }).length;
+    var tot = M.active.filter(function(w){ return G.zs.indexOf(w.zone)>=0; }).length;
+    t += '\n🔹 โซน '+G.zs.join(', ')+(G.sup?' – หัวหน้า'+G.sup:'')+' (ประเมิน '+n+'/'+tot+')\n'+
+      (f.length ? f.map(function(x){ return '• แปลง '+x.w.id+' '+x.w.name+' – '+PANEL_GR[x.e.g]+': '+panelIssues(x.s).replace(/ · /g,', '); }).join('\n') : '✓ ไม่มีคนที่ต้องติดตาม');
+  });
+  return t+'\n\nรบกวนหัวหน้าโซนแนะนำและติดตามผลครับ 🙏';
+}
+function panelCsvText(M){
+  var q = function(v){ return '"'+String(v==null?'':v).replace(/"/g,'""')+'"'; };
+  var head = ['วันที่','แปลง','ชื่อ','โซน','หัวหน้า','ความลึก','เปลือก','มุมกรีด','ความสะอาด','คะแนน/12','ผล','บันทึก','ผู้ประเมิน'];
+  var sup = M.R.sup || {};
+  var lines = M.people.filter(function(p){ return p.s && PANEL_CRIT.some(function(c){ return Number(p.s[c.k]); }); }).map(function(p){
+    var e = p.e;
+    return [M.cur, p.w.id, p.w.name, p.w.zone, sup[p.w.zone]||''].concat(PANEL_CRIT.map(function(c){ return p.s[c.k]||''; }))
+      .concat([e&&e.done?e.sum:'', e&&e.done?PANEL_GR[e.g]:'ไม่ครบ', p.s.note||'', p.s.by||'']).map(q).join(',');
+  });
+  return '\ufeff'+[head.map(q).join(',')].concat(lines).join('\r\n');
+}
+
+/* ---------- โหลดข้อมูล ---------- */
+function panelFetchAll(){
+  return gsCall({action:'panel_all'}, false).then(function(j){
+    return {rows:(j.rows||[]), roster:j.roster||null};
+  }).catch(function(err){
+    var oldAct = (err && (err.code==='BAD_ACTION' || /ไม่รองรับ/.test(err.message||'')));
+    if(!oldAct) throw err;
+    return gsCall({action:'panel_rounds'}, false).then(function(j){      // Code.gs v4: ดึงทีละรอบ
+      var ds = (j.rounds||[]).slice(-16);
+      return Promise.all(ds.map(function(d){ return gsCall({action:'panel_day', date:d}, false).then(function(x){ return x.evals||[]; }); }))
+        .then(function(arr){
+          var rows = []; arr.forEach(function(a){ rows = rows.concat(a); });
+          return gsCall({action:'panel_roster'}, false).then(function(r){ return {rows:rows, roster:r.roster||null}; });
+        });
+    });
+  });
+}
+function loadPanelReport(force){
+  if(panelState.status==='loading') return;
+  if(!force && panelState.status==='error') return;          // ไม่ลองซ้ำเองทันที (กันยิงคำขอซ้ำ) — ใช้ปุ่ม ↻ หรือรอรอบ 60 วินาที
+  if(!force && panelState.loadedAt && Date.now()-panelState.loadedAt<30000) return;
+  var first = !panelState.loadedAt;
+  panelState.status = 'loading';
+  if(first && ACTIVE==='panel' && panelState.view==='report') render();
+  panelFetchAll().then(function(res){
+    var sig = JSON.stringify(res);
+    var changed = sig!==panelState.sig || first || panelState.error;
+    panelState.rows = res.rows; panelState.roster = res.roster; panelState.sig = sig;
+    panelState.status = 'ok'; panelState.error = null; panelState.errorCode = null; panelState.loadedAt = Date.now();
+    if(ACTIVE==='panel' && panelState.view==='report' && changed) render();
+  }).catch(function(err){
+    panelState.status = 'error'; panelState.error = (err && err.message) || String(err); panelState.errorCode = err && err.code;
+    if(ACTIVE==='panel' && panelState.view==='report') render();
+  });
+}
+function panelStartTimer(){
+  if(panelTimer) return;
+  panelTimer = setInterval(function(){
+    if(ACTIVE!=='panel' || panelState.view!=='report'){ clearInterval(panelTimer); panelTimer = null; return; }
+    if(document.hidden) return;
+    var a = document.activeElement; if(a && a.id==='panelSearch') return;
+    loadPanelReport(true);
+  }, 60000);
+}
+
+/* ---------- มุมมอง "กรอกประเมิน" (กรอบแอปประเมิน) ---------- */
 var panelEvalHtml = null;
 function getPanelEvalHtml(){
   if(panelEvalHtml===null){
@@ -2507,25 +2971,61 @@ function getPanelEvalHtml(){
   }
   return panelEvalHtml;
 }
-function renderPanelEval(){
-  return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap;">'+
-    '<span class="hint" style="margin:0;">ประเมินหน้ากรีดรายคน — เลือกโซน แตะชื่อ แล้วเลือกผล 4 ข้อ ระบบบันทึกลง Google Sheet ทันที</span>'+
-    '<button class="btn" type="button" id="panelEvalOpen">↗ เปิดเต็มหน้าจอในแท็บใหม่</button>'+
-  '</div>'+
+function renderPanelEntry(){
+  return '<div class="row-head"><div><h2>✍️ กรอกผลประเมินหน้ากรีด</h2><div class="subtext">เลือกโซน แตะชื่อ แล้วเลือกผล 4 ข้อ ระบบบันทึกลง Google Sheet ทันที</div></div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'+panelViewToggle()+
+    '<button class="btn" type="button" id="panelEvalOpen">↗ เปิดเต็มหน้าจอ</button></div></div>'+
   '<iframe id="panelEvalFrame" title="ประเมินหน้ากรีด" '+
-    'style="display:block;width:100%;height:calc(100vh - 190px);min-height:560px;border:1px solid var(--border,#e1e8da);border-radius:14px;background:transparent;"></iframe>';
+    'style="display:block;width:100%;height:calc(100vh - 220px);min-height:560px;border:1px solid var(--border);border-radius:var(--radius-card);background:var(--bg-elev);box-shadow:var(--shadow-card);"></iframe>';
 }
-function bindPanelEvalEvents(){
-  var f = document.getElementById('panelEvalFrame');
-  if(f && !f.getAttribute('data-loaded')){ f.setAttribute('data-loaded','1'); f.srcdoc = getPanelEvalHtml(); }
-  var ob = document.getElementById('panelEvalOpen');
-  if(ob && !ob.getAttribute('data-bound')){
-    ob.setAttribute('data-bound','1');
-    ob.addEventListener('click', function(){
-      var url = URL.createObjectURL(new Blob([getPanelEvalHtml()], {type:'text/html;charset=utf-8'}));
-      window.open(url, '_blank');
+
+/* ---------- ผูกอีเวนต์ของแท็บ ---------- */
+function bindPanelEvents(){
+  document.querySelectorAll('[data-pview]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var v = b.getAttribute('data-pview');
+      if(v===panelState.view) return;
+      panelState.view = v; render();
     });
+  });
+  if(panelState.view==='entry'){
+    var f = document.getElementById('panelEvalFrame');
+    if(f && !f.getAttribute('data-loaded')){ f.setAttribute('data-loaded','1'); f.srcdoc = getPanelEvalHtml(); }
+    var ob = document.getElementById('panelEvalOpen');
+    if(ob && !ob.getAttribute('data-bound')){
+      ob.setAttribute('data-bound','1');
+      ob.addEventListener('click', function(){
+        window.open(URL.createObjectURL(new Blob([getPanelEvalHtml()], {type:'text/html;charset=utf-8'})), '_blank');
+      });
+    }
+    return;
   }
+  /* มุมมองรายงาน */
+  loadPanelReport(false); panelStartTimer();
+  var el = function(id){ return document.getElementById(id); };
+  if(el('panelRefresh')) el('panelRefresh').addEventListener('click', function(){ panelState.status = panelState.status==='loading'?'loading':'idle'; loadPanelReport(true); });
+  if(el('panelRound')) el('panelRound').addEventListener('change', function(e){ panelState.round = e.target.value; render(); });
+  if(el('panelZone')) el('panelZone').addEventListener('change', function(e){ panelState.zone = e.target.value; panelRefreshTable(); });
+  if(el('panelGradeSel')) el('panelGradeSel').addEventListener('change', function(e){ panelState.grade = e.target.value; panelRefreshTable(); });
+  if(el('panelSearch')) el('panelSearch').addEventListener('input', function(e){ panelState.search = e.target.value; panelRefreshTable(); });
+  document.querySelectorAll('[data-pfilter]').forEach(function(b){
+    b.addEventListener('click', function(ev){
+      ev.preventDefault(); panelState.grade = b.getAttribute('data-pfilter'); panelState.zone = 'all'; render();
+      var t = el('panelTbl'); if(t && t.scrollIntoView) t.scrollIntoView({block:'center'});
+    });
+  });
+  if(el('panelLine')) el('panelLine').addEventListener('click', function(){
+    var btn = el('panelLine'), t = panelLineText(panelModel());
+    var done = function(){ btn.textContent = '✓ คัดลอกแล้ว'; setTimeout(function(){ btn.textContent = '💬 คัดลอกสรุป LINE'; }, 2000); };
+    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done, function(){ window.prompt('คัดลอกข้อความนี้', t); });
+    else window.prompt('คัดลอกข้อความนี้', t);
+  });
+  if(el('panelCsv')) el('panelCsv').addEventListener('click', function(){
+    var M = panelModel(), url = URL.createObjectURL(new Blob([panelCsvText(M)], {type:'text/csv;charset=utf-8'}));
+    var a = document.createElement('a'); a.href = url; a.download = 'ประเมินหน้ากรีด-'+M.cur+'.csv';
+    document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 800);
+  });
+  panelSetCount(); bindPanelSort();
 }
 
 /* ===== กล่องที่ย่อ/ขยายได้ (บนมือถือ/แท็บเล็ตเริ่มต้นย่อไว้ — จำสถานะไว้ตอนวาดหน้าใหม่) ===== */
@@ -2550,7 +3050,10 @@ function render(){
   else if(ACTIVE==='zone') c.innerHTML = renderZone();
   else if(ACTIVE==='expense') c.innerHTML = renderExpense();
   else if(ACTIVE==='map') c.innerHTML = renderMapRubber();
-  else if(ACTIVE==='panel'){ if(!document.getElementById('panelEvalFrame')) c.innerHTML = renderPanelEval(); }
+  else if(ACTIVE==='panel'){
+    if(panelState.view==='entry'){ if(!document.getElementById('panelEvalFrame')) c.innerHTML = renderPanelEntry(); }
+    else c.innerHTML = renderPanelReport();
+  }
   else if(ACTIVE==='import') c.innerHTML = renderImport();
   bindTabEvents();
 }
